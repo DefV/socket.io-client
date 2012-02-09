@@ -324,7 +324,10 @@
 
     for (prop in additional) {
       if (additional.hasOwnProperty(prop) && util.indexOf(seen, prop) < 0) {
-        if (typeof target[prop] !== 'object' || !depth) {
+        if (target[prop] instanceof Array || !depth ) { // typeof [] === 'object', so it needs special attention
+          target[prop] = additional[prop];
+          seen.push(additional[prop]);
+        } else if (typeof target[prop] !== 'object' || !depth) {
           target[prop] = additional[prop];
           seen.push(additional[prop]);
         } else {
@@ -1792,7 +1795,7 @@
    */
 
   Socket.prototype.disconnect = function () {
-    if (this.connected) {
+    if (this.connected || this.connecting) {
       if (this.open) {
         this.of('').packet({ type: 'disconnect' });
       }
@@ -1894,9 +1897,11 @@
 
   Socket.prototype.onError = function (err) {
     if (err && err.advice) {
-      if (err.advice === 'reconnect' && this.connected) {
+      if (err.advice === 'reconnect' && (this.connected || this.connecting)) {
         this.disconnect();
-        this.reconnect();
+        if (this.options.reconnect) {
+          this.reconnect();
+        }
       }
     }
 
@@ -1910,19 +1915,22 @@
    */
 
   Socket.prototype.onDisconnect = function (reason) {
-    var wasConnected = this.connected;
+    var wasConnected = this.connected
+      , wasConnecting = this.connecting;
 
     this.connected = false;
     this.connecting = false;
     this.open = false;
 
-    if (wasConnected) {
+    if (wasConnected || wasConnecting) {
       this.transport.close();
       this.transport.clearTimeouts();
-      this.publish('disconnect', reason);
+      if (wasConnected) {
+        this.publish('disconnect', reason);
 
-      if ('booted' != reason && this.options.reconnect && !this.reconnecting) {
-        this.reconnect();
+        if ('booted' != reason && this.options.reconnect && !this.reconnecting) {
+          this.reconnect();
+        }
       }
     }
   };
